@@ -57,6 +57,31 @@ FROM
 WHERE encounters.reasoncode = '55680006'
   AND encounters.start > '1999-07-15'
   AND TRUNC( (encounters.start - patients.birthdate) / 365.24 ) between 18 and 35
+),
+readmissions AS
+(
+SELECT
+  overdose_encounter.encounter_id
+, encounters.id AS readmission_encounter_id
+, encounters.start
+, encounters.stop
+, TRUNC(encounters.start - overdose_encounter.hospital_discharge_date) AS readmit_days
+, CASE
+    WHEN TRUNC(encounters.start - overdose_encounter.hospital_discharge_date) <= 30
+    THEN 1
+    ELSE 0
+  END AS thirty_day_readmission
+, CASE
+    WHEN TRUNC(encounters.start - overdose_encounter.hospital_discharge_date) <= 90
+    THEN 1
+    ELSE 0
+  END AS ninety_day_readmission
+, dense_rank() over (partition by overdose_encounter.patient_id, overdose_encounter.encounter_id order by encounters.start) as SORT
+FROM
+  overdose_encounter
+  INNER JOIN encounters
+    ON encounters.patient = overdose_encounter.patient_id
+WHERE encounters.start >= overdose_encounter.hospital_discharge_date
 )
 SELECT DISTINCT
   overdose_encounter.patient_id
@@ -66,18 +91,22 @@ SELECT DISTINCT
 , overdose_encounter.death_at_visit_ind
 , COUNT(DISTINCT overdose_encounter.active_med_code) AS count_current_meds
 , MAX(overdose_encounter.is_opioid) AS current_opioid_ind
--- , overdose_encounter.count_current_meds
-, '' as CURRENT_OPIOID_IND
-, '' as READMISSION_90_DAY_IND
-, '' as READMISSION_30_DAY_IND
-, '' as FIRST_READMISSION_DATE
+, MAX(readmissions.ninety_day_readmission) AS readmission_90_day_ind
+, MAX(readmissions.thirty_day_readmission) AS readmission_30_day_ind
+, first_readmission.start AS first_readmission_date
 FROM
   overdose_encounter
+  LEFT OUTER JOIN readmissions
+    ON readmissions.encounter_id = overdose_encounter.encounter_id
+  LEFT OUTER JOIN readmissions AS first_readmission
+    ON first_readmission.encounter_id = overdose_encounter.encounter_id
+    AND first_readmission.sort = 1
 GROUP BY
   overdose_encounter.patient_id
 , overdose_encounter.encounter_id
 , overdose_encounter.hospital_encounter_date
 , overdose_encounter.age_at_visit
 , overdose_encounter.death_at_visit_ind
+, first_readmission.start
 ORDER BY
   patient_id
