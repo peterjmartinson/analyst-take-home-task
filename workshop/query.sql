@@ -12,7 +12,7 @@ SELECT
     ELSE 0
   END AS is_deceased
 , CASE
-    WHEN patients.deathdate::DATE = encounters.stop::DATE
+    WHEN patients.deathdate::DATE = encounters.stop::DATE -- Assuming discharge date = inpatient death date
     THEN '1' -- Must be a varchar due to 'N/A' below
     ELSE '0'
   END AS death_at_visit_ind
